@@ -96,12 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide Badgeify", action: #selector(NSApplication.hide(_:)),
+        appMenu.addItem(NSMenuItem(title: "Hide Badges", action: #selector(NSApplication.hide(_:)),
                                    keyEquivalent: "h"))
         appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)),
                                    keyEquivalent: "w"))
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit Badgeify", action: #selector(NSApplication.terminate(_:)),
+        appMenu.addItem(NSMenuItem(title: "Quit Badges", action: #selector(NSApplication.terminate(_:)),
                                    keyEquivalent: "q"))
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
@@ -161,7 +161,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Badgeify Settings"
+            window.title = "Badges Settings"
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
@@ -188,16 +188,48 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-// `Badgeify --dump-badges` prints what the Dock reader can see, for troubleshooting
+// `Badges --dump-badges` prints what both readers can see, for troubleshooting
 // Accessibility permission without launching the UI.
 if CommandLine.arguments.contains("--dump-badges") {
     print("AXIsProcessTrusted: \(DockBadgeReader.isTrustedFlag), can read Dock: \(DockBadgeReader.canReadDock())")
+
+    print("dock badges:")
     let badges = DockBadgeReader.scan()
     if badges.isEmpty {
-        print("no badges found (grant Accessibility access, and make sure a Dock app has an unread count)")
+        print("  none (grant Accessibility access, and make sure a Dock app has an unread count)")
     }
     for (key, value) in badges.sorted(by: { $0.key < $1.key }) {
         print("  \(key) = \(value)")
+    }
+
+    // Every running app with a bundle identifier, so an app can be checked for a title
+    // count before its detection mode is switched over.
+    print("window title counts:")
+    let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+    let titles = WindowTitleReader.counts(for: running)
+    if titles.isEmpty {
+        print("  none (no running app shows a (n) count in its window title)")
+    }
+    for (key, value) in titles.sorted(by: { $0.key < $1.key }) {
+        print("  \(key) = \(value)")
+    }
+    exit(0)
+}
+
+// `Badges --dump-titles` prints the raw window titles of every running app, so it is easy
+// to see which ones expose a count that Window Title detection could read.
+if CommandLine.arguments.contains("--dump-titles") {
+    let running = NSWorkspace.shared.runningApplications
+        .filter { $0.activationPolicy == .regular }
+        .compactMap(\.bundleIdentifier)
+    for id in Set(running).sorted() {
+        let titles = WindowTitleReader.titles(forBundleIdentifier: id).filter { !$0.isEmpty }
+        guard !titles.isEmpty else { continue }
+        print(id)
+        for title in titles {
+            let count = WindowTitleReader.extractCount(from: title)
+            print("  \(title)\(count.map { "   -> \($0)" } ?? "")")
+        }
     }
     exit(0)
 }

@@ -6,10 +6,10 @@
 # makes the designated requirement "identifier + this leaf certificate" instead, which
 # survives rebuilds — grant Accessibility once and it stays.
 #
-# Undo with:  security delete-identity -c "Badgeify Local Signing"
+# Undo with:  security delete-identity -c "Badges Local Signing"
 set -euo pipefail
 
-NAME=${1:-Badgeify Local Signing}
+NAME=${1:-Badges Local Signing}
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-certificate -c "$NAME" >/dev/null 2>&1; then
@@ -31,7 +31,7 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
 
 # macOS's Security framework can't read OpenSSL 3's default PKCS#12 encryption, and an
 # empty export password fails its MAC check — hence the legacy ciphers and a throwaway one.
-PASS=badgeify-import
+PASS=badges-import
 openssl pkcs12 -export -out "$DIR/identity.p12" \
   -inkey "$DIR/key.pem" -in "$DIR/cert.pem" \
   -passout "pass:$PASS" -macalg sha1 \

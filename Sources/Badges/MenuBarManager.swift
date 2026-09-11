@@ -4,9 +4,10 @@ import Combine
 @MainActor
 final class MenuBarManager {
     private let store: SettingsStore
-    private let reader = DockBadgeReader()
+    private let reader = BadgeReader()
     private var managed: [ManagedItem] = []
-    private var badges: [String: String] = [:]
+    private var dockBadges: [String: String] = [:]
+    private var titleBadges: [String: String] = [:]
     private(set) var hasAccess = false
     private var refreshTimer: Timer?
     private var animationTimer: Timer?
@@ -97,24 +98,35 @@ final class MenuBarManager {
     // MARK: - Refresh
 
     func refresh() {
-        reader.read { [weak self] snapshot in
+        let titleCandidates = Set(enabledItems.filter(\.detection.readsTitle).map(\.bundleIdentifier))
+        reader.read(titleCandidates: titleCandidates) { [weak self] snapshot in
             guard let self else { return }
-            self.badges = snapshot.badges
+            self.dockBadges = snapshot.dock
+            self.titleBadges = snapshot.titles
             self.hasAccess = snapshot.hasAccess
-            Log.debug("access=\(snapshot.hasAccess) badges=\(snapshot.badges)")
-            // Recorded so `defaults read com.local.badgeify diagnostics` reports the state of
+            Log.debug("access=\(snapshot.hasAccess) dock=\(snapshot.dock) titles=\(snapshot.titles)")
+            // Recorded so `defaults read com.local.badges diagnostics` reports the state of
             // the real app process. Running the binary from a terminal is misleading: TCC
             // attributes those calls to the terminal, which may have its own grant.
             UserDefaults.standard.set(
-                "access=\(snapshot.hasAccess) badges=\(snapshot.badges.count) items=\(self.managed.count)",
+                "access=\(snapshot.hasAccess) dock=\(snapshot.dock.count) titles=\(snapshot.titles.count) items=\(self.managed.count)",
                 forKey: "diagnostics"
             )
             self.redraw()
         }
     }
 
+    /// Resolves an app's unread count through whichever source its `DetectionMode` allows.
+    /// `.auto` prefers the Dock badge and falls back to the window title, which is what makes
+    /// title-only apps like Signal work without being configured.
     private func badge(for config: MenuBarItem) -> String? {
-        badges[config.bundleIdentifier] ?? badges["name:" + config.name]
+        let mode = config.detection
+        if mode.readsDock,
+           let dock = dockBadges[config.bundleIdentifier] ?? dockBadges["name:" + config.name] {
+            return dock
+        }
+        if mode.readsTitle { return titleBadges[config.bundleIdentifier] }
+        return nil
     }
 
     private func redraw() {
@@ -233,13 +245,13 @@ final class MenuBarManager {
         hideItem.target = m
         menu.addItem(hideItem)
 
-        let settings = NSMenuItem(title: "Badgeify Settings…", action: #selector(ManagedItem.showSettings),
+        let settings = NSMenuItem(title: "Badges Settings…", action: #selector(ManagedItem.showSettings),
                                   keyEquivalent: ",")
         settings.target = m
         menu.addItem(settings)
 
         menu.addItem(.separator())
-        let quitSelf = NSMenuItem(title: "Quit Badgeify", action: #selector(NSApplication.terminate(_:)),
+        let quitSelf = NSMenuItem(title: "Quit Badges", action: #selector(NSApplication.terminate(_:)),
                                   keyEquivalent: "q")
         quitSelf.target = NSApp
         menu.addItem(quitSelf)

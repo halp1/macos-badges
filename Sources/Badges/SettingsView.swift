@@ -218,7 +218,7 @@ private struct GeneralPane: View {
                 }
             }
 
-            Text("Drag to reorder. Badges are read from each app's Dock tile, so an app must be in the Dock for its unread count to appear.")
+            Text("Drag to reorder. Each app's count comes from its Dock badge or from the (\u{2026}) in its window title — on Auto, whichever answers first. Use Window Title for apps like Signal that never badge their Dock tile.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
@@ -268,6 +268,16 @@ private struct ItemRow: View {
                 ItemInfo(item: item)
             }
 
+            Picker("", selection: store.detectionBinding(for: item.id)) {
+                ForEach(DetectionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 124)
+            .help(item.detection.detail)
+
             Toggle("", isOn: store.binding(for: item.id))
                 .toggleStyle(.switch)
                 .labelsHidden()
@@ -286,8 +296,17 @@ private struct ItemInfo: View {
             Label(item.bundleIdentifier, systemImage: "shippingbox")
             Label(item.isRunning ? "Running" : "Not running",
                   systemImage: item.isRunning ? "play.circle" : "stop.circle")
-            if !DockBadgeReader.isInDock(bundleIdentifier: item.bundleIdentifier) {
-                Label("Not in the Dock — badge counts can't be read", systemImage: "exclamationmark.triangle")
+            Label(item.detection.detail, systemImage: "scope")
+            if item.detection.readsDock,
+               !DockBadgeReader.isInDock(bundleIdentifier: item.bundleIdentifier) {
+                Label(item.detection == .dockBadge
+                        ? "Not in the Dock — its badge can't be read"
+                        : "Not in the Dock — only its window title can be read",
+                      systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            if item.detection.readsTitle, !item.isRunning {
+                Label("Not running — no window title to read", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             if !item.path.isEmpty {
@@ -313,7 +332,7 @@ private struct PermissionBanner: View {
                 .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Accessibility access required").font(.system(size: 13, weight: .medium))
-                Text("Badgeify reads unread counts from the Dock, which needs Accessibility permission. If you just granted it, relaunch — macOS only reports the change to newly started processes.")
+                Text("Badges reads unread counts from the Dock and from app window titles, both of which need Accessibility permission. If you just granted it, relaunch — macOS only reports the change to newly started processes.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -421,7 +440,7 @@ private struct AdvancedPane: View {
 
     private func exportSettings() {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Badgeify Settings.json"
+        panel.nameFieldStringValue = "Badges Settings.json"
         panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -450,7 +469,7 @@ private struct AdvancedPane: View {
 
 private struct UpdatesPane: View {
     @EnvironmentObject var store: SettingsStore
-    @State private var status = "Badgeify is up to date."
+    @State private var status = "Badges is up to date."
     @State private var checking = false
 
     var body: some View {
@@ -471,7 +490,7 @@ private struct UpdatesPane: View {
                         checking = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                             checking = false
-                            status = "Badgeify is up to date."
+                            status = "Badges is up to date."
                         }
                     }
                     .disabled(checking)
@@ -497,7 +516,7 @@ private struct AboutPane: View {
                         .font(.system(size: 44))
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Badgeify").font(.system(size: 20, weight: .semibold))
+                        Text("Badges").font(.system(size: 20, weight: .semibold))
                         Text("Version \(AppInfo.version)")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
@@ -520,7 +539,7 @@ private struct AboutPane: View {
                     Text("Dock tiles (AXStatusLabel)").foregroundStyle(.secondary)
                 }
                 RowDivider()
-                SettingsRow(title: "Quit Badgeify") {
+                SettingsRow(title: "Quit Badges") {
                     Button("Quit") { NSApp.terminate(nil) }
                 }
             }

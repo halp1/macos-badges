@@ -92,6 +92,33 @@ enum NotRunningBehavior: String, TitledOption {
     }
 }
 
+/// Where an app's unread count is read from.
+///
+/// Most apps publish it on their Dock tile, but some (Signal, for one) only ever put it
+/// in their window title — `Signal (1)` — leaving the Dock tile bare.
+enum DetectionMode: String, TitledOption {
+    case auto, dockBadge, windowTitle
+
+    var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .dockBadge: return "Dock Badge"
+        case .windowTitle: return "Window Title"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .auto: return "Dock badge, falling back to the window title"
+        case .dockBadge: return "Read the count from the app's Dock tile"
+        case .windowTitle: return "Read the count from (…) in the app's window title"
+        }
+    }
+
+    var readsDock: Bool { self != .windowTitle }
+    var readsTitle: Bool { self != .dockBadge }
+}
+
 enum ClickBehavior: String, TitledOption {
     case showOnly, showOrHide, showAndHideOthers
 
@@ -112,13 +139,16 @@ struct MenuBarItem: Codable, Identifiable, Hashable {
     var name: String
     var path: String
     var enabled: Bool
+    var detection: DetectionMode
 
-    init(id: UUID = UUID(), bundleIdentifier: String, name: String, path: String, enabled: Bool = true) {
+    init(id: UUID = UUID(), bundleIdentifier: String, name: String, path: String, enabled: Bool = true,
+         detection: DetectionMode = .auto) {
         self.id = id
         self.bundleIdentifier = bundleIdentifier
         self.name = name
         self.path = path
         self.enabled = enabled
+        self.detection = detection
     }
 
     init(from decoder: Decoder) throws {
@@ -128,6 +158,7 @@ struct MenuBarItem: Codable, Identifiable, Hashable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? bundleIdentifier
         path = try c.decodeIfPresent(String.self, forKey: .path) ?? ""
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        detection = try c.decodeIfPresent(DetectionMode.self, forKey: .detection) ?? .auto
     }
 
     var url: URL? {
@@ -204,14 +235,27 @@ final class SettingsStore: ObservableObject {
 
     private var saving = false
 
+    /// The app was once called Badgeify. `UserDefaults.standard` is keyed by bundle
+    /// identifier, so renaming to `com.local.badges` left the old settings stranded in the
+    /// previous domain — this pulls them across once, on the first launch that finds the
+    /// new domain empty.
+    private static let legacyDomain = "com.local.badgeify"
+
     init() {
-        if let raw = UserDefaults.standard.data(forKey: Self.defaultsKey),
-           let decoded = try? JSONDecoder().decode(SettingsData.self, from: raw) {
+        if let decoded = Self.stored(in: .standard) {
             data = decoded
+        } else if let migrated = UserDefaults(suiteName: Self.legacyDomain).flatMap(Self.stored) {
+            data = migrated
+            save()
         } else {
             data = SettingsData()
             data.items = SettingsStore.suggestedItems()
         }
+    }
+
+    private static func stored(in defaults: UserDefaults) -> SettingsData? {
+        guard let raw = defaults.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(SettingsData.self, from: raw)
     }
 
     private func save() {
@@ -236,6 +280,18 @@ final class SettingsStore: ObservableObject {
     func setEnabled(_ enabled: Bool, for id: UUID) {
         guard let idx = data.items.firstIndex(where: { $0.id == id }) else { return }
         data.items[idx].enabled = enabled
+    }
+
+    func setDetection(_ mode: DetectionMode, for id: UUID) {
+        guard let idx = data.items.firstIndex(where: { $0.id == id }) else { return }
+        data.items[idx].detection = mode
+    }
+
+    func detectionBinding(for id: UUID) -> Binding<DetectionMode> {
+        Binding(
+            get: { self.data.items.first(where: { $0.id == id })?.detection ?? .auto },
+            set: { self.setDetection($0, for: id) }
+        )
     }
 
     func binding(for id: UUID) -> Binding<Bool> {

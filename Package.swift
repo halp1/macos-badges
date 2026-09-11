@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "Badgeify",
+    name: "Badges",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "Badgeify", path: "Sources/Badgeify")
+        .executableTarget(name: "Badges", path: "Sources/Badges")
     ]
 )

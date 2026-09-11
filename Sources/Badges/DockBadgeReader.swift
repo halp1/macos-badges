@@ -6,9 +6,7 @@ import ApplicationServices
 /// Dock tiles expose their badge text as the (undocumented but stable) `AXStatusLabel`
 /// attribute, and the app they represent through `AXURL`. That is the only public way to
 /// observe another app's badge, so Accessibility permission is required.
-final class DockBadgeReader {
-    private let queue = DispatchQueue(label: "com.local.badgeify.dock", qos: .utility)
-
+enum DockBadgeReader {
     /// `AXIsProcessTrusted()` is latched at process start: a process that launched before
     /// the user granted access keeps reporting `false` for its whole lifetime. So trust is
     /// determined functionally — by trying a real Accessibility read on the Dock — and the
@@ -46,31 +44,19 @@ final class DockBadgeReader {
         }
     }
 
-    struct Snapshot {
-        /// Keys are bundle identifiers, plus `name:<Dock title>` entries as a fallback for
-        /// apps whose bundle can't be resolved.
-        var badges: [String: String] = [:]
-        /// True when the Dock actually answered — the only trustworthy access signal.
-        var hasAccess = false
-    }
-
-    func read(_ completion: @escaping (Snapshot) -> Void) {
-        queue.async {
-            let result = Self.snapshot()
-            DispatchQueue.main.async { completion(result) }
-        }
-    }
-
-    static func snapshot() -> Snapshot {
+    /// `badges` is keyed by bundle identifier, plus `name:<Dock title>` entries as a
+    /// fallback for apps whose bundle can't be resolved. `hasAccess` reports whether the
+    /// Dock actually answered — the only trustworthy access signal.
+    static func snapshot() -> (badges: [String: String], hasAccess: Bool) {
         guard let dock = dockElement(),
               let children = attribute(dock, kAXChildrenAttribute as String) as? [AXUIElement]
-        else { return Snapshot() }
+        else { return ([:], false) }
 
         var out: [String: String] = [:]
         for child in children {
             walk(child, depth: 1, into: &out)
         }
-        return Snapshot(badges: out, hasAccess: true)
+        return (out, true)
     }
 
     static func scan() -> [String: String] { snapshot().badges }
